@@ -7,7 +7,7 @@ object BootStrap extends App {
   val spark = SparkSession
     .builder()
     .appName("Spark SQL basic example")
-    .config("spark.master", "local[2]")
+    .config("spark.master", "local[1]")
     .getOrCreate()
 
   // For implicit conversions like converting RDDs to DataFrames
