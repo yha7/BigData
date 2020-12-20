@@ -1,10 +1,16 @@
 package logic
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql._
+import org.joda.time.DateTime
 //import org.apache.spark.sql.catalyst.plans.logical.Window
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.functions.udf
+import java.text.SimpleDateFormat
+import java.util.Date
+import org.joda.time
+import org.joda.time.Seconds
 
 object BootStrap extends App {
 
@@ -32,12 +38,61 @@ object BootStrap extends App {
     .withColumn("ts_lag",lag(col("ts_converted"),1)
       .over(Window.partitionBy(col("user_id")).orderBy("ts")))
 
-  val df1 =df.withColumn("uid",
+/*  val df1 =df.withColumn("uid",
     when(col("ts_lag").isNull,concat(col("user_id"),col("ts_converted")))
       .when((unix_timestamp(col("ts_converted"))-unix_timestamp(col("ts_lag")))/(60) >= 30 ,
         concat(col("user_id"),col("ts_converted")))
           .otherwise(concat(col("user_id"),col("ts_lag"))
-  ))
-  df1.show(false)
-  df1.printSchema()
+   ))*/
+
+  val df2 = df.withColumn("ts_diff",
+    (unix_timestamp(col("ts_converted"))-unix_timestamp(col("ts_lag"))))
+    .withColumn("ts_diff",when(col("ts_diff").isNull,0).otherwise(col("ts_diff")))
+
+  val df3 = df2.groupBy("user_id").agg(collect_list(col("ts")).as("clickList"),collect_list(col("ts_diff")).as("tsList"))
+
+
+  df3.show(false)
+  df3.printSchema()
+  //creation of udf
+  def generateSessionId(userId:String,clickList: Array[String],tsList:Array[Long]) =
+    {
+      val tmo1 =  60 * 60
+      val tmo2 = 2 * 60 * 60
+      val DATE_FORMAT= "yyyy-MM-dd HH:mm:ss"
+      val dateFormat=new SimpleDateFormat(DATE_FORMAT)
+      val clickListInDate=clickList.map(s=>new DateTime(dateFormat.parse(s)))
+      var currentSessionStartTime= clickListInDate(0);
+      var sessionStartTime=Seq(currentSessionStartTime)
+
+      val totalElements=clickList.length
+      for(i<-1 to totalElements-1)
+        {
+          if(tsList(i)>=tmo1)
+            {
+              currentSessionStartTime=clickListInDate(i)
+            }
+            else {
+            val timeDiff=Seconds.secondsBetween(currentSessionStartTime,clickListInDate(i)).getSeconds
+            if(timeDiff>=tmo2)
+              {
+                currentSessionStartTime=clickListInDate(i)
+              }
+              else
+              {
+                currentSessionStartTime
+              }
+            sessionStartTime=sessionStartTime:+currentSessionStartTime
+          }
+        }
+      //column(sessionStartTime)
+      sessionStartTime
+    }
+
+  //val x = spark.udf.register("sessionIdGenerator",generateSessionId)
+  //udf(generateSessionId)
+  val  x = udf[ArrayType,String, Array[String],Array[Long]](generateSessionId)
+  val df4 = df3.withColumn("session_id",x(col("userID"),col("clickList"),col("tsList")))
+  df4.show(false)
+  df4.printSchema()
 }
