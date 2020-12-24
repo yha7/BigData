@@ -49,13 +49,14 @@ object BootStrap extends App {
     (unix_timestamp(col("ts_converted"))-unix_timestamp(col("ts_lag"))))
     .withColumn("ts_diff",when(col("ts_diff").isNull,0).otherwise(col("ts_diff")))
 
-  val df3 = df2.groupBy("user_id").agg(collect_list(col("ts")).as("clickList"),collect_list(col("ts_diff")).as("tsList"))
+  val df3 = df2.groupBy("user_id").agg(collect_list(col("ts")).as("clickList"),
+    collect_list(col("ts_diff")).as("tsList"))
 
 
-  df3.show(false)
-  df3.printSchema()
+  /*df3.show(false)
+  df3.printSchema()*/
   //creation of udf
-  def generateSessionId(userId:String,clickList: Array[String],tsList:Array[Long]) =
+  def generateSessionId(userId:String,clickList: Seq[String],tsList:Seq[Long]) =
     {
       val tmo1 =  60 * 60
       val tmo2 = 2 * 60 * 60
@@ -80,19 +81,29 @@ object BootStrap extends App {
               }
               else
               {
-                currentSessionStartTime
+                println("else block")
+                println(clickList(i))
+                currentSessionStartTime=currentSessionStartTime
               }
-            sessionStartTime=sessionStartTime:+currentSessionStartTime
           }
+          sessionStartTime=sessionStartTime:+currentSessionStartTime
         }
       //column(sessionStartTime)
-      sessionStartTime
+      //println(":::::::::::::::::::::::::::::::::::::::"+sessionStartTime.size)
+      //val q = sessionStartTime.map(x=>x.toString + userId) zip clickList
+      //q.foreach(println(_))
+      sessionStartTime.map(x=>x.toString + userId) zip clickList
+
     }
 
   //val x = spark.udf.register("sessionIdGenerator",generateSessionId)
   //udf(generateSessionId)
-  val  x = udf[ArrayType,String, Array[String],Array[Long]](generateSessionId)
-  val df4 = df3.withColumn("session_id",x(col("userID"),col("clickList"),col("tsList")))
+  val  udf1 = udf[Seq[(String, String)],String, Seq[String],Seq[Long]](generateSessionId)
+  val df4 = df3.withColumn("session_idAndclick_time",explode(udf1(col("user_id"),col("clickList"),col("tsList"))))
+    .select($"user_id", $"session_idAndclick_time._1".as("sessionId"), $"session_idAndclick_time._2".as("click_time"))
+
+    //.withColumn("clickList",explode(col("clickList")))
+  //val df5 = df4.select(col("user_id"),col("clickList"),col("session_id"))
   df4.show(false)
   df4.printSchema()
 }
