@@ -17,8 +17,8 @@ class BootStrapTest extends AnyFlatSpec{
 
     val tsList: Seq[Long] = Seq(0, 4200, 3000, 1500, 4500, 1800, 4200, 1800)
 
-    val expectedSequence = logic.BootStrap.generateSessionId(user_id,clickList,tsList)
-    expectedSequence.foreach(println(_))
+   /* val expectedSequence = logic.BootStrap.generateSessionId(user_id,clickList,tsList)
+    expectedSequence.foreach(println(_))*/
 
   }
 
