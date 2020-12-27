@@ -1,7 +1,7 @@
 package logic
 
 import logic.BootStrap.spark
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.joda.time.DateTime
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.Window
@@ -46,7 +46,6 @@ object SessionIdGenerator {
   }
 
   def getSessionIds(rawDataframe:DataFrame):DataFrame =
-
   {
     val dataframeWithClickTimeAsTimestamp = rawDataframe.withColumn("ts_converted", to_timestamp(col("ts"), "yyyy-MM-dd HH:mm:ss"))
       .withColumn("ts_lag", lag(col("ts_converted"), 1)
@@ -90,10 +89,22 @@ object SessionIdGenerator {
 
     val finalDataframe = getSessionIds(rawDataframe:DataFrame)
 
-    finalDataframe.show(false)
-    finalDataframe.printSchema()
+    /*finalDataframe.show(false)
+    finalDataframe.printSchema()*/
+    val x = finalDataframe.withColumn("yr",year(col("click_time")))
+      .withColumn("mm",month(col("click_time")))
+      .withColumn("dd",dayofmonth(col("click_time")))
 
+    x.show(false)
+    x.printSchema()
+    x.coalesce(1).write.partitionBy("yr","mm","dd").format("csv").mode("overwrite")
+      .save("/home/yha7/data/output/sessionIdData")
+
+    x.createOrReplaceTempView("user_clicks_info")
+    //val sqlDF = spark.sql("SELECT * FROM user_clicks_info GROUP BY year, month HAVING sum(activity_time)")
+    val sqlDF = spark.sql("SELECT user_id,yr,mm,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm")
+    val sqlDF1 = spark.sql("SELECT user_id,yr,mm,dd,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm,dd")
+    sqlDF.show(false)
+    sqlDF1.show(false)
   }
 }
-
-
