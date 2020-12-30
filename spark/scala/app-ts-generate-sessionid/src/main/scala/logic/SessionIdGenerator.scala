@@ -1,12 +1,10 @@
 package logic
 
-import logic.BootStrap.spark
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.joda.time.DateTime
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions.udf
-
 import java.text.SimpleDateFormat
 import org.joda.time.Seconds
 
@@ -33,13 +31,14 @@ object SessionIdGenerator {
           currentSessionStartTime = clickListInDate(i)
         }
         else {
-          println("else block")
-          println(clickList(i))
           currentSessionStartTime = currentSessionStartTime
         }
       }
+
       sessionStartTime = sessionStartTime :+ currentSessionStartTime
+
     }
+
     val activityTimeList = tsList.map(x=> if(x > 3600) 0 else x)
     ((sessionStartTime.map(x => x.toString + userId) zip clickList) zip activityTimeList).map(x=>(x._1._1,x._1._2,x._2))
 
@@ -47,18 +46,26 @@ object SessionIdGenerator {
 
   def getSessionIds(rawDataframe:DataFrame):DataFrame =
   {
-    val dataframeWithClickTimeAsTimestamp = rawDataframe.withColumn("ts_converted", to_timestamp(col("ts"), "yyyy-MM-dd HH:mm:ss"))
+    //Adding two columns ts_converted and ts_lag in timestamp format to raw Datframe where ts_converted is a timestamp format of user click time.
+    val dataframeWithClickTimeAsTimestamp = rawDataframe
+      .withColumn("ts_converted", to_timestamp(col("ts"), "yyyy-MM-dd HH:mm:ss"))
       .withColumn("ts_lag", lag(col("ts_converted"), 1)
         .over(Window.partitionBy(col("user_id")).orderBy("ts")))
 
+    //Adding a column ts_diff in Long format which is the time difference of current click time and previous click time.
     val dataframeWithTimeDifferenceColumn = dataframeWithClickTimeAsTimestamp.withColumn("ts_diff",
       (unix_timestamp(col("ts_converted")) - unix_timestamp(col("ts_lag"))))
       .withColumn("ts_diff", when(col("ts_diff").isNull, 0).otherwise(col("ts_diff")))
 
-    val dataframeWithAggregatedValues = dataframeWithTimeDifferenceColumn.groupBy("user_id").agg(collect_list(col("ts")).as("clickList"),
+   //Aggregating the values by doing GROUP BY on user_id and collecting the user clicks and time differences as a list
+    val dataframeWithAggregatedValues = dataframeWithTimeDifferenceColumn.groupBy("user_id").
+      agg(collect_list(col("ts")).as("clickList"),
       collect_list(col("ts_diff")).as("tsList"))
 
+    //Creating a UDF which generates a session ID's
     val generateSessionId_UDF = udf[Seq[(String, String, Long)], String, Seq[String], Seq[Long]](generateSessionId)
+
+    //Calling the UDF which creates a session ID and doing MD 5 hash on session ID column
     val finalDataframeWithSessionID = dataframeWithAggregatedValues
       .withColumn("session_idAndclick_time",
         explode(generateSessionId_UDF(col("user_id"),
@@ -70,6 +77,7 @@ object SessionIdGenerator {
       .withColumn("sessionId", md5(col("sessionId")))
 
     finalDataframeWithSessionID
+
   }
 
   def process(spark:SparkSession): Unit = {
@@ -87,24 +95,22 @@ object SessionIdGenerator {
       ("2018-01-01 11:00:00", "u2"),
       ("2018-01-02 11:00:00", "u2")).toDF("ts", "user_id")
 
-    val finalDataframe = getSessionIds(rawDataframe:DataFrame)
-
-    /*finalDataframe.show(false)
-    finalDataframe.printSchema()*/
-    val x = finalDataframe.withColumn("yr",year(col("click_time")))
+    //Adding a columns year,month and date using click_time to partition the dataframe which writing to sink.
+    val finalDataframe = getSessionIds(rawDataframe:DataFrame).withColumn("yr",year(col("click_time")))
       .withColumn("mm",month(col("click_time")))
       .withColumn("dd",dayofmonth(col("click_time")))
 
-    x.show(false)
-    x.printSchema()
-    x.coalesce(1).write.partitionBy("yr","mm","dd").format("csv").mode("overwrite")
+    //Writing to sink
+    finalDataframe.coalesce(1).write.partitionBy("yr","mm","dd").format("csv").mode("overwrite")
       .save("/home/yha7/data/output/sessionIdData")
 
-    x.createOrReplaceTempView("user_clicks_info")
-    //val sqlDF = spark.sql("SELECT * FROM user_clicks_info GROUP BY year, month HAVING sum(activity_time)")
-    val sqlDF = spark.sql("SELECT user_id,yr,mm,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm")
-    val sqlDF1 = spark.sql("SELECT user_id,yr,mm,dd,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm,dd")
-    sqlDF.show(false)
-    sqlDF1.show(false)
+    //Creating a temporary view on a Dataframe
+    finalDataframe.createOrReplaceTempView("user_clicks_info")
+
+    //Queries to check the time spent by a user in a day and a month
+    val checkTimeSpentInMonth = spark.sql("SELECT user_id,yr,mm,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm")
+    val checkTimeSpentInDay = spark.sql("SELECT user_id,yr,mm,dd,sum(activity_time) FROM user_clicks_info GROUP BY user_id,yr,mm,dd")
+    checkTimeSpentInMonth.show(false)
+    checkTimeSpentInDay.show(false)
   }
 }
