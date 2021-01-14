@@ -43,27 +43,22 @@ object BootStrap extends App{
 
   //First approach
   rdd.mapPartitions(Anonymous()).foreach(println(_))
-
-  //First Approach
   case class Anonymous () extends (Iterator[String] => Iterator[String])
   {
     def apply(iterator:Iterator[String]): Iterator[String] = {
       {
-        iterator.map(x => " FIRST APPROACH WORKING" )
+        iterator.map(x => "FIRST APPROACH WORKING" )
       }
     }
   }
 
   //Second approach
-
   rdd.mapPartitions( x=>anon(x)).foreach(println(_))
   def anon(x:Iterator[String]):Iterator[String]={
     x.map(x => "Second approach working")
   }
 
-
-  ///////Third approach-with apply method of Function1 trait
-
+  //Third approach-with apply method of Function1 trait
   val anonym = new Anonym()
   rdd.mapPartitions(new Anonym()).foreach(println(_))
 
@@ -73,9 +68,8 @@ object BootStrap extends App{
      def apply(iterator:Iterator[String]): Iterator[String] = {
        {
 
-         iterator.map(x => " Third approach WORKING -with apply method of Function1 trait" )
+         iterator.map(x => "Third approach WORKING -with apply method of Function1 trait" )
        }
-
      }
    }
 
@@ -89,5 +83,4 @@ object BootStrap extends App{
       x.map(x => g)
     }
   }
-
 }
