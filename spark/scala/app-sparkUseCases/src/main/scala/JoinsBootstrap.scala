@@ -1,7 +1,7 @@
 import org.apache.spark._
 import org.apache.spark.sql.SparkSession
 
-object Bootstrap extends App {
+object JoinsBootstrap extends App {
 
   val spark: SparkSession = SparkSession.builder().appName("app-implementSparkUsecases").master("local[2]").getOrCreate()
   import spark.implicits._
